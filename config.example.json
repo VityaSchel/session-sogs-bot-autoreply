@@ -1,0 +1,18 @@
+{
+  "sogsUrl": "http://localhost:3000",
+  "sogsPublicKey": "f4cd02a9e484e6c30d47b3f48c0442decd9deebd132a023ee812af95a1e8621b",
+  "roomToken": "roomtest",
+  "mnemonic": "innocent archer taken nestle skater snug governing cajun gave beyond pancakes soda cajun",
+  "botDisplayName": "My Bot",
+  "blinding": true,
+  "responses": [
+    {
+      "triggers": ["!test", "!foobar"],
+      "response": "Test response"
+    },
+    {
+      "triggers": ["!author"],
+      "response": "hloth.dev"
+    }
+  ]
+}
