@@ -9,6 +9,8 @@ import { VisibleMessage } from '@session.js/client/schema'
 import fs from 'fs/promises'
 import path from 'path'
 
+process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
+
 const configPath = path.join(__dirname, 'config.json')
 
 let sogsUrl = ''
