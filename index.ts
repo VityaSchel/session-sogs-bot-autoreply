@@ -92,12 +92,12 @@ async function pollMessages(sinceSeqNo: number) {
       }
       if (content.dataMessage && typeof content.dataMessage.body === 'string') {
         const msgText = content.dataMessage.body.toLowerCase()
-        for (const res of responses) {
-          if (res.triggers.includes(msgText)) {
+        for (const { triggers, response } of responses) {
+          if (triggers.some((trig) => msgText.includes(trig))) {
             try {
               lastSeqNo = await replyToMessage({
                 to: content,
-                reply: res.response,
+                reply: response,
                 by: msg.session_id,
                 postedAt: Math.floor(msg.posted * 1000),
               })
