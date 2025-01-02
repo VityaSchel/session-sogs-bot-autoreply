@@ -5,6 +5,7 @@ await sodium.ready
 import { BunNetwork } from '@session.js/bun-network'
 import { SignalService } from '@session.js/types/signal-bindings'
 import { decryptSogsMessageData } from '@session.js/sogs'
+import { VisibleMessage } from '@session.js/client/schema'
 import fs from 'fs/promises'
 import path from 'path'
 
@@ -63,7 +64,7 @@ async function pollMessages(sinceSeqNo: number) {
     if (!messagesReq.ok) {
       throw new Error('Failed to poll messages')
     }
-    const messagesRes = await messagesReq.json() as { id: number, seqno: number, data: string, session_id: string }[]
+    const messagesRes = await messagesReq.json() as { id: number, seqno: number, data: string, session_id: string, posted: number }[]
     for (const msg of messagesRes) {
       let content: SignalService.Content
       try {
@@ -76,26 +77,50 @@ async function pollMessages(sinceSeqNo: number) {
         const msgText = content.dataMessage.body.toLowerCase()
         for(const res of responses) {
           if (res.triggers.includes(msgText)) {
-            await replyToMessage({
-              to: content,
-              reply: res.response,
-            })
+            try {
+              lastSeqNo = await replyToMessage({
+                to: content,
+                reply: res.response,
+                id: msg.id,
+                by: msg.session_id,
+                postedAt: Math.floor(msg.posted * 1000)
+              })
+            } catch(e) {
+              console.error('Failed to reply to message', msg.id, 'by', msg.session_id, e)
+            }
           }
         }
       }
     }
   }
-
-  return roomRes.message_sequence
 }
 
-async function replyToMessage({ to, reply }: {
+async function replyToMessage({ to, reply, id, postedAt, by }: {
   to: SignalService.Content,
   reply: string
+  id: number
+  postedAt: number
+  by: string
 }) {
+  const msg = new VisibleMessage({
+    body: reply,
+    profile: session.getMyProfile(),
+    timestamp: session.getNowWithNetworkOffset(),
+    expirationType: null,
+    expireTimer: null,
+    identifier: crypto.randomUUID(),
+    attachments: [],
+    preview: [],
+    quote: {
+      id: postedAt,
+      author: by,
+      ...(typeof to.dataMessage?.body === 'string' && { text: to.dataMessage?.body })
+    }
+  })
+
   const { data, signature } = session.encodeSogsMessage({
     serverPk: sogsPublicKey,
-    text: reply,
+    message: msg,
     blind: useBlinding
   })
 
@@ -104,7 +129,7 @@ async function replyToMessage({ to, reply }: {
     signature,
   })
 
-  await session.sendSogsRequest({
+  const response = await session.sendSogsRequest({
     serverPk: sogsPublicKey,
     blind: useBlinding,
     host: sogsUrl,
@@ -112,6 +137,11 @@ async function replyToMessage({ to, reply }: {
     method: 'POST',
     body,
   })
+  if(typeof response === 'object' && response !== null && 'seqno' in response && typeof response.seqno === 'number') {
+    return response.seqno
+  } else {
+    throw new Error('Failed to send message')
+  }
 }
 
 if (lastSeqNo === undefined) {
@@ -130,7 +160,7 @@ if (lastSeqNo === undefined) {
 }
 
 while(true) {
-  lastSeqNo = await pollMessages(lastSeqNo)
+  await pollMessages(lastSeqNo)
   await new Promise(resolve => setTimeout(resolve, 3500))
   let config = JSON.parse(await fs.readFile(configPath, 'utf-8'))
   config.lastSeqNo = lastSeqNo
