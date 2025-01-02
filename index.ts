@@ -17,7 +17,7 @@ let roomToken = ''
 let botMnemonic = ''
 let botDisplayName = ''
 let useBlinding = true
-let responses: { triggers: string[], response: string }[]
+let responses: { triggers: string[]; response: string }[]
 let lastSeqNo: number | undefined = undefined
 
 try {
@@ -39,15 +39,11 @@ session.setMnemonic(botMnemonic)
 session.setDisplayName(botDisplayName)
 const sessionId = session.getSessionID()
 const blindedSessionId = session.blindSessionId(sogsPublicKey)
-if (!session.getKeypair()) {
-  throw new Error('Failed to get keypair')
-}
-const keypair = session.getKeypair()!
 console.log('Running bot under', sessionId, 'blinded ID:', blindedSessionId)
 
 function normalizeTriggers() {
-  responses.forEach(res => {
-    res.triggers = res.triggers.map(trig => trig.toLowerCase())
+  responses.forEach((res) => {
+    res.triggers = res.triggers.map((trig) => trig.toLowerCase())
   })
 }
 normalizeTriggers()
@@ -57,36 +53,60 @@ async function pollMessages(sinceSeqNo: number) {
   if (!roomReq.ok) {
     throw new Error('Failed to get room info')
   }
-  const roomRes = await roomReq.json() as { message_sequence: number }
+  const roomRes = (await roomReq.json()) as { message_sequence: number }
 
   for (let since = sinceSeqNo; since < roomRes.message_sequence; since += 256) {
-    const messagesReq = await fetch(sogsUrl + '/room/' + roomToken + '/messages/since/' + since + '?limit=256')
+    const messagesReq = await fetch(
+      sogsUrl +
+        '/room/' +
+        roomToken +
+        '/messages/since/' +
+        since +
+        '?limit=256',
+    )
     if (!messagesReq.ok) {
       throw new Error('Failed to poll messages')
     }
-    const messagesRes = await messagesReq.json() as { id: number, seqno: number, data: string, session_id: string, posted: number }[]
+    const messagesRes = (await messagesReq.json()) as {
+      id: number
+      seqno: number
+      data: string
+      session_id: string
+      posted: number
+    }[]
     for (const msg of messagesRes) {
       let content: SignalService.Content
       try {
         content = decryptSogsMessageData(msg.data)
       } catch (e) {
-        console.warn('Couldn\'t decrypt message', msg.id, 'by', msg.session_id, e)
+        console.warn(
+          "Couldn't decrypt message",
+          msg.id,
+          'by',
+          msg.session_id,
+          e,
+        )
         continue
       }
       if (content.dataMessage && typeof content.dataMessage.body === 'string') {
         const msgText = content.dataMessage.body.toLowerCase()
-        for(const res of responses) {
+        for (const res of responses) {
           if (res.triggers.includes(msgText)) {
             try {
               lastSeqNo = await replyToMessage({
                 to: content,
                 reply: res.response,
-                id: msg.id,
                 by: msg.session_id,
-                postedAt: Math.floor(msg.posted * 1000)
+                postedAt: Math.floor(msg.posted * 1000),
               })
-            } catch(e) {
-              console.error('Failed to reply to message', msg.id, 'by', msg.session_id, e)
+            } catch (e) {
+              console.error(
+                'Failed to reply to message',
+                msg.id,
+                'by',
+                msg.session_id,
+                e,
+              )
             }
           }
         }
@@ -95,10 +115,14 @@ async function pollMessages(sinceSeqNo: number) {
   }
 }
 
-async function replyToMessage({ to, reply, id, postedAt, by }: {
-  to: SignalService.Content,
+async function replyToMessage({
+  to,
+  reply,
+  postedAt,
+  by,
+}: {
+  to: SignalService.Content
   reply: string
-  id: number
   postedAt: number
   by: string
 }) {
@@ -114,14 +138,16 @@ async function replyToMessage({ to, reply, id, postedAt, by }: {
     quote: {
       id: postedAt,
       author: by,
-      ...(typeof to.dataMessage?.body === 'string' && { text: to.dataMessage?.body })
-    }
+      ...(typeof to.dataMessage?.body === 'string' && {
+        text: to.dataMessage?.body,
+      }),
+    },
   })
 
   const { data, signature } = session.encodeSogsMessage({
     serverPk: sogsPublicKey,
     message: msg,
-    blind: useBlinding
+    blind: useBlinding,
   })
 
   const body = JSON.stringify({
@@ -137,7 +163,12 @@ async function replyToMessage({ to, reply, id, postedAt, by }: {
     method: 'POST',
     body,
   })
-  if(typeof response === 'object' && response !== null && 'seqno' in response && typeof response.seqno === 'number') {
+  if (
+    typeof response === 'object' &&
+    response !== null &&
+    'seqno' in response &&
+    typeof response.seqno === 'number'
+  ) {
     return response.seqno
   } else {
     throw new Error('Failed to send message')
@@ -152,17 +183,22 @@ if (lastSeqNo === undefined) {
     endpoint: '/room/' + roomToken,
     method: 'GET',
   })
-  if (typeof res === 'object' && res !== null && 'message_sequence' in res && typeof res.message_sequence === 'number') {
+  if (
+    typeof res === 'object' &&
+    res !== null &&
+    'message_sequence' in res &&
+    typeof res.message_sequence === 'number'
+  ) {
     lastSeqNo = res.message_sequence
   } else {
     throw new Error('Failed to get room info')
   }
 }
 
-while(true) {
+while (true) {
   await pollMessages(lastSeqNo)
-  await new Promise(resolve => setTimeout(resolve, 3500))
-  let config = JSON.parse(await fs.readFile(configPath, 'utf-8'))
+  await new Promise((resolve) => setTimeout(resolve, 3500))
+  const config = JSON.parse(await fs.readFile(configPath, 'utf-8'))
   config.lastSeqNo = lastSeqNo
   await fs.writeFile(configPath, JSON.stringify(config, null, 2))
 }
